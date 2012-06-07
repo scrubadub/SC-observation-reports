@@ -45,9 +45,13 @@ data singer.obs_cleaned;
 	if missing(obs_hospid) then delete;
 	
 	/*
-		Collapse MUSC hospitals into one hospital
+		This section handles a few exceptional cases
+		1. Collapse MUSC hospitals into one hospital
+		2. McLeod used an older version of the form for some of the observations which did not query for surgical tech participation
+			in the checklist. We'll give them credit for it.
 	 */
 	if obs_hospid=75 then obs_hospid=42;
+	if obs_hospid=41 and missing(obs_q4d) then obs_q4d=1;
 
 	/* If team members introduce themselves or the team is established, then give them credit for the intros */
 	if obs_q5=1 or obs_q5a=1 then obs_q5_intro=1;
@@ -79,91 +83,41 @@ data singer.obs_cleaned;
 		else obs_q13_done=0;
 	if (obs_q14=1 or obs_q14=-9999) then obs_q14_done=1;
 		else obs_q14_done=0;
-		
-	/* 2012-06-05 For the debriefing items, we've decided on the following rule:
-	
-		1. If all debriefing items are missing, then we will presume that the section was not observed at all. We'll drop these and not 
-		   count it against them.
-		2. If at least 1 item was marked, then we will presume that any items that are missing were not actually done.
-	 */
-	if missing(obs_q12) and missing(obs_q13) and missing(obs_q14) then do;
-			obs_debrief_observed=0;
-			obs_items_denominator=10;
-		end;
-		else do;
-			obs_debrief_observed=1;
-			obs_items_denominator=13;
-		end;
-	 
-	/*
-	Previous version:
-	
-	if (obs_q12=1 or obs_q12=-9999) then obs_q12_done=1;
-		else obs_q12_done=0;
-	if (obs_q13=1 or obs_q13=-9999) then obs_q13_done=1;
-		else obs_q13_done=0;
-	if (obs_q14=1 or obs_q14=-9999) then obs_q14_done=1;
-		else obs_q14_done=0;
-	 */
 
 	/* 
 		2012-06-05
 		Old rule: If at least 1 person (circulating nurse, anesthesia, or surgeon) does the timeout, credit is given for the whole timeout
 		Now changed to match JC criteria: all people must participate to have it count. We will exclude surgical technicians since some of the
 		older forms did not have a field for the surgical techs.
+
+		2012-06-07
+		Changed to count surgical techs. We will give credit for McLeod because they used older forms which were missing the surgical techs
 	 */
-	if (obs_q4a=1 and obs_q4b=1 and obs_q4c=1) then obs_timeout_complete=1;
+	if (obs_q4a=1 and obs_q4b=1 and obs_q4c=1 and obs_q4d=1) then obs_timeout_complete=1;
 		else obs_timeout_complete=0;
 
-
 /* 
-	Calculate composite score 
-
-	There are two versions, one if a debriefing is considered observed or not.
+	Calculate overall checklist performance as a binary and count of number of items performed
  */
- 
- 	if obs_debrief_observed=1 then do;
- 	
-		if (obs_q1_done=1 and obs_q2_done=1 and obs_q3_done=1 and obs_timeout_complete=1 and 
-			obs_q5_intro=1 and obs_q6_done=1 and obs_q7_done=1 and obs_q8_done=1 and obs_q9_done=1 and obs_q10_done=1 and 
-			obs_q12_done=1 and obs_q13_done=1 and obs_q14_done=1) then obs_checklist_complete=1;
-				else obs_checklist_complete = 0;
+	if (obs_q1_done=1 and obs_q2_done=1 and obs_q3_done=1 and obs_timeout_complete=1 and 
+		obs_q5_intro=1 and obs_q6_done=1 and obs_q7_done=1 and obs_q8_done=1 and obs_q9_done=1 and obs_q10_done=1 and 
+		obs_q12_done=1 and obs_q13_done=1 and obs_q14_done=1) 
+			then obs_checklist_complete=1;
+			else obs_checklist_complete=0;
 
-		obs_num_checklist = obs_q1_done + obs_q2_done + obs_q3_done + obs_timeout_complete + obs_q5_intro + 
-							obs_q6_done + obs_q7_done + obs_q8_done + obs_q9_done + obs_q10_done + 
-							obs_q12_done + obs_q13_done + obs_q14_done;
- 	end;
- 	else do;
-		if (obs_q1_done=1 and obs_q2_done=1 and obs_q3_done=1 and obs_timeout_complete=1 and 
-			obs_q5_intro=1 and obs_q6_done=1 and obs_q7_done=1 and obs_q8_done=1 and obs_q9_done=1 and obs_q10_done=1) 
-				then obs_checklist_complete=1;
-				else obs_checklist_complete = 0;
-				
-		obs_num_checklist = obs_q1_done + obs_q2_done + obs_q3_done + obs_timeout_complete + obs_q5_intro + 
-							obs_q6_done + obs_q7_done + obs_q8_done + obs_q9_done + obs_q10_done;		
- 	end;
- 
-	/* NOT USED AT THE MOMENT
-			if obs_num_checklist > 10 then obs_checklist_80pct = 1;
-			else obs_checklist_80pct = 0;
-	
-	if (obs_timeout_complete=1 and obs_q5_intro=1 and obs_q6_done=1 and obs_q7_done=1 and obs_q8_done=1 and obs_q9_done=1 and obs_q10_done=1) 
-			then obs_briefing_complete=1;
-		else obs_briefing_complete = 0;
-	 */
+	obs_num_checklist = obs_q1_done + obs_q2_done + obs_q3_done + obs_timeout_complete + obs_q5_intro + 
+						obs_q6_done + obs_q7_done + obs_q8_done + obs_q9_done + obs_q10_done + 
+						obs_q12_done + obs_q13_done + obs_q14_done;
 
 	/* 
 		Create scoring for the overall weighted average for a hospital 
 
-		NEED TO RECALCULATE Q4 SCORE to match Matt's code
+		Weighted equal average of SCIP measures (Q1-3), briefing (4-10) with 1/4 point for each participant in the time out, and debriefing (12-14)
 	 */
 	obsSCIPScore = sum(obs_q1_done, obs_q2_done, obs_q3_done);
-	obsBriefingScore = sum(obs_q4a, obs_q4b, obs_q4c)/3 + sum(obs_q5_intro, obs_q6_done, obs_q7_done, obs_q8_done, obs_q9_done, obs_q10_done, obs_q11);
+	obsBriefingScore = sum(obs_q4a, obs_q4b, obs_q4c, obs_q4d)/4 + sum(obs_q5_intro, obs_q6_done, obs_q7_done, obs_q8_done, obs_q9_done, obs_q10_done);
 	obsDebriefingScore = sum(obs_q12_done, obs_q13_done, obs_q14_done);
-	if obs_debrief_observed=1 then
-		obsOverallScore = (obsSCIPScore/3 + obsBriefingScore/8 + obsDebriefingScore/3)/3;
-	else
-		obsOverallScore = (obsSCIPScore/3 + obsBriefingScore/8)/2;
+	obsOverallScore = (obsSCIPScore/3 + obsBriefingScore/7 + obsDebriefingScore/3)/3;
 
 	/* Recode the N/As as missing so I can create tables only involving the applicable cases */
 	if obs_q1=1 or obs_q1=2 then obs_q1_applicable=1;
@@ -228,7 +182,7 @@ data singer.obs_cleaned;
 	rename q17_new = obs_q17;
 	rename q18_new = obs_q18;
 
-	/* Calculate case duration EVERYTHING BELOW HERE IS BROKEN!!!*/
+	/* Calculate case duration EVERYTHING BELOW HERE IS BROKEN!!! */
 	start_time = input(obs_inc_time, anydttme8.);
 	end_time = input(obs_end_time, anydttme8.);
 	format start_time end_time time.;
@@ -266,15 +220,9 @@ proc sort data=work.obs_hospscore out=work.obs_hospscore;
 	by obsOverallScore;
 run;
 
-data work.obs_hospscore;
-	set work.obs_hospscore;
-	id+1;
-run;
-
-proc gchart data=work.obs_hospscore;
-	vbar id / discrete sumvar=obsOverallScore;
-	run;
-quit;
+/* At this point I find it easiest to cut and paste the numbers into the Excel file "Hospital performance on observation measures.xls" to keep the 
+   graph formatting intact. 
+ */
 
 %macro createHospitalSet(in=,out=,hospid=);
 	data &out;
@@ -286,12 +234,12 @@ quit;
 
 %macro obsReport(in=);
 	proc freq data=&in;
-		tables obs_checklist_complete obs_q11 obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
+		tables obs_checklist_complete obs_q11 obs_timeout_complete obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
 			   obs_q5_intro obs_q6-obs_q10 obs_q12_done obs_q13_done obs_q14_done obs_q22;
 	run;
 
 	proc freq data=&in;
-		tables (obs_checklist_complete obs_q11 obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
+		tables (obs_checklist_complete obs_q11 obs_timeout_complete obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
 			   obs_q5_intro obs_q6-obs_q10 obs_q12_done obs_q13_done obs_q14_done)*obs_date_group / norow nocum nopercent;
 	run;
 %mend;
@@ -299,18 +247,21 @@ quit;
 %createHospitalSet(in=singer.obs_cleaned, out=work.mcleod, hospid=41);
 %obsReport(in=work.mcleod);
 
+/* Calculate overall checklist performance by hospital over time */
+proc means data=work.mcleod mean;
+	var obsOverallScore;
+	class obs_date_group;
+	output out=work.mcleod_hospscore mean=;
+run;
+
 %createHospitalSet(in=singer.obs_cleaned, out=work.roper, hospid=56);
 %obsReport(in=work.roper);
 
 %createHospitalSet(in=singer.obs_cleaned, out=work.georgetown, hospid=23);
 %obsReport(in=work.georgetown);
 
-/* Merge MUSC hospitals */
-%createHospitalSet(in=singer.obs_cleaned, out=work.musc_main, hospid=42);
-%createHospitalSet(in=singer.obs_cleaned, out=work.musc_art, hospid=75);
-data work.musc_merged;
-	set work.musc_main work.musc_art;
-run;
+/* Keep in mind we merged the MUSC hospitals together in the original cleaning code */
+%createHospitalSet(in=singer.obs_cleaned, out=work.musc_merged, hospid=42);
 %obsReport(in=work.musc_merged);
 
 %createHospitalSet(in=singer.obs_cleaned, out=work.palmetto_baptist, hospid=49);
