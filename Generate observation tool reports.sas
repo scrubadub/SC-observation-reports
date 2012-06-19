@@ -224,28 +224,41 @@ run;
    graph formatting intact. 
  */
 
-%macro createHospitalSet(in=,out=,hospid=);
+%macro createHospitalSet(in=,out=,cases=, hospid=);
 	data &out;
 		set &in;
 
 		if obs_hospid=&hospid;
 	run;
+
+	data &cases (keep=obs_procdate obs_surgspec_cat obs_procperf);
+		set &out;
+	run;
 %mend;
 
 %macro obsReport(in=);
 	proc freq data=&in;
-		tables obs_checklist_complete obs_q11 obs_timeout_complete obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
-			   obs_q5_intro obs_q6-obs_q10 obs_q12_done obs_q13_done obs_q14_done obs_q22;
+		tables obs_checklist_complete obs_q11 obs_q4b obs_q4a obs_q4c obs_q4d obs_timeout_complete obs_q1_applicable obs_q2_applicable obs_q3_applicable
+			   obs_q5_intro obs_q6-obs_q10 obs_q12_done obs_q12 obs_q13_done obs_q13 obs_q14_done obs_q14;
 	run;
 
 	proc freq data=&in;
-		tables (obs_checklist_complete obs_q11 obs_timeout_complete obs_q4a obs_q4b obs_q4c obs_q4d obs_q1_applicable obs_q2_applicable obs_q3_applicable
+		tables (obs_checklist_complete obs_q11 obs_q4b obs_q4a obs_q4c obs_q4d obs_timeout_complete obs_q1_applicable obs_q2_applicable obs_q3_applicable
 			   obs_q5_intro obs_q6-obs_q10 obs_q12_done obs_q13_done obs_q14_done)*obs_date_group / norow nocum nopercent;
 	run;
 %mend;
 
-%createHospitalSet(in=singer.obs_cleaned, out=work.mcleod, hospid=41);
+%createHospitalSet(in=singer.obs_cleaned, out=work.mcleod, cases=work.mcleod_cases, hospid=41);
 %obsReport(in=work.mcleod);
+
+PROC EXPORT DATA= WORK.MCLEOD_CASES 
+            OUTFILE= "C:\Documents and Settings\LHUANG\My Documents\Drop
+box\Documents (Lyen)\Research\SC checklist implementation\SC observation
+ reports\McLeod cases observed.xls" 
+            DBMS=EXCEL REPLACE;
+     RANGE="cases"; 
+RUN;
+
 
 /* Calculate overall checklist performance by hospital over time */
 proc means data=work.mcleod mean;
@@ -254,20 +267,35 @@ proc means data=work.mcleod mean;
 	output out=work.mcleod_hospscore mean=;
 run;
 
-%createHospitalSet(in=singer.obs_cleaned, out=work.roper, hospid=56);
+%createHospitalSet(in=singer.obs_cleaned, out=work.roper, cases=work.roper_cases, hospid=56);
 %obsReport(in=work.roper);
 
-%createHospitalSet(in=singer.obs_cleaned, out=work.georgetown, hospid=23);
+PROC EXPORT DATA= WORK.ROPER_CASES 
+            OUTFILE= "C:\Documents and Settings\LHUANG\My Documents\Drop
+box\Documents (Lyen)\Research\SC checklist implementation\SC observation
+ reports\Roper cases observed.xls" 
+            DBMS=EXCEL REPLACE;
+     RANGE="cases"; 
+RUN;
+
+/* Calculate overall checklist performance by hospital over time */
+proc means data=work.roper mean;
+	var obsOverallScore;
+	class obs_date_group;
+	output out=work.roper_hospscore mean=;
+run;
+
+%createHospitalSet(in=singer.obs_cleaned, out=work.georgetown, cases=work.georgetown_cases, hospid=23);
 %obsReport(in=work.georgetown);
 
 /* Keep in mind we merged the MUSC hospitals together in the original cleaning code */
-%createHospitalSet(in=singer.obs_cleaned, out=work.musc_merged, hospid=42);
+%createHospitalSet(in=singer.obs_cleaned, out=work.musc_merged, cases=work.musc_cases, hospid=42);
 %obsReport(in=work.musc_merged);
 
-%createHospitalSet(in=singer.obs_cleaned, out=work.palmetto_baptist, hospid=49);
+%createHospitalSet(in=singer.obs_cleaned, out=work.palmetto_baptist, cases=work.palmetto_baptist_cases, hospid=49);
 %obsReport(in=work.palmetto_baptist);
 
-%createHospitalSet(in=singer.obs_cleaned, out=work.waccamaw, hospid=70);
+%createHospitalSet(in=singer.obs_cleaned, out=work.waccamaw, cases=work.waccamaw_cases, hospid=70);
 %obsReport(in=work.waccamaw);
 
 /* Collapse McLeod from four date groups into two */
@@ -279,20 +307,6 @@ data work.mcleod_2groups;
 run;
 
 %obsReport(in=work.mcleod_2groups);
-
-/* Experiment to collapse the four date groups into two
-data work.roper_2groups;
-	set work.roper;
-	
-	if obs_date_group=1 or obs_date_group=2 then obs_date_group=5;
-	else if obs_date_group=3 or obs_date_group=4 then obs_date_group=6;
-run;
-
-%obsReport(in=work.roper_2groups);
-
-proc freq data=work.roper;
-	tables obs_num_checklist;
-run; */
 
 proc freq data=singer.obs_cleaned;
 	table obs_hospid;
